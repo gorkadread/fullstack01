@@ -1,37 +1,140 @@
-import requests
-from flask import Flask, jsonify, make_response, request
+import requests, datetime, uuid
+from flask import Flask, jsonify, request
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="http://localhost:3000")
 
 
-@app.route("/gettransactions")
-def gettransactions():
-    request_trans = requests.get(
-        "https://infra.devskills.app/api/transaction-management/transactions"
-    )
-
-    return jsonify(request_trans)
+# Socket events
+@socketio.on('connect')
+def connected():
+    print('Connected')
 
 
-@app.route("/transaction/<string:transaction_id>/<int:transaction_sum>")
-def transaction(transaction_id=None, transaction_sum=None):
-    if not transaction_id:
-        message = jsonify(message="fail")
-        return make_response(message, 400)
-    elif not transaction_sum:
-        message = jsonify(message="fail")
-        return make_response(message, 400)
-    # Handle if sum is not a value here
-    # Here we should send the transaction to the api
-    message = jsonify(message="success")
-    return make_response(message, 200)
+@socketio.on('disconnect')
+def disconnected():
+    print('Disconnected')
 
 
-@app.route("/ping")
-def hello_world():
-    hello = {"ping": "pong", "really": True}
-    return jsonify(hello)
+@socketio.on('TransactionAdded')
+def transaction_added(message):
+    print('Transaction added, return all finished ones')
+    response = jsonify(list(reversed(completed_transactions)))
+    emit('transactionAddedResponse', {'data': response}, broadcast=True)
+
+
+# A dictionary containing all the accounts
+account_balances = {}
+
+
+# Finds a specific transaction
+def Find(transaction_list, transaction_id):
+    for transaction in transaction_list:
+        if transaction['transaction_id'] == transaction_id:
+            return transaction
+
+
+# Discerns wether passed value is an int
+def Could_be_int(value):
+    try:
+        int(value)
+        return True
+    except:
+        return False
+
+
+# Returns a message related to entered http error
+def Http_errors(code):
+    if code == 400:
+        return 'Missing parameters', 400
+    elif code == 404:
+        return 'Not found'
+    elif code == 405:
+        return 'Specified HTTP method not allowed', 405
+    elif code == 415:
+        return 'Specified content type not allowed', 415
+
+
+# A (crude) array-log containing all the transactions performed
+completed_transactions = []
+
+
+# Transactions route for returning all transactions with a GET, and add a new transaction if POST
+@app.route('/transactions', methods=['POST', 'GET'])
+@app.route('/transactions/')
+@app.route('/transactions/<string:transaction_id>')
+def Transactions(transaction_id=None):
+    if request.method == 'POST':
+        # This should be filled to the brim with errorhandling really...
+        data = request.get_json()
+        account_id = data.get('account_id')
+        amount = data.get('amount')
+        # Make sure we got both account_id and amount, and that the account_id leads to an account
+        if not account_id or not Could_be_int(amount):
+            return Http_errors(400)
+
+        # Get current balance and calculate new one
+        current_balance = 0
+        if account_balances.get(account_id):
+            current_balance = account_balances.get(account_id)
+
+        balance_after = current_balance + int(amount)
+
+        # Create a new transaction object to both add to the completed transaction-logs and return to the user
+        new_transaction = {
+            'transaction_id': str(uuid.uuid4()),
+            'account_id': account_id,
+            'amount': int(amount),
+            'balance_after': balance_after,
+            'created_at': datetime.datetime.now()
+        }
+        completed_transactions.append(new_transaction)
+
+        # Update users new balance
+        account_balances[account_id] = balance_after
+
+        return jsonify(new_transaction), 201
+    elif request.method == 'GET':
+        # Return all transactions here
+        if not transaction_id:
+            return jsonify(list(reversed(completed_transactions))), 200
+
+        a_transaction = Find(completed_transactions, transaction_id)
+        if not a_transaction:
+            return Http_errors(404)
+
+        message = {
+            'transaction_id': transaction_id,
+            'account_id': a_transaction['account_id'],
+            'amount': a_transaction['amount'],
+            'created_at': a_transaction['created_at']
+        }
+        return message, 200
+    else:
+        # Not a POST nor a GET?
+        return Http_errors(405)
+
+
+# Get the amount on a specific account
+@app.route('/accounts')
+@app.route('/accounts/')
+@app.route('/accounts/<string:account_id>')
+def Accounts(account_id=None):
+    if not account_id:
+        return Http_errors(400)
+    balance = account_balances.get(account_id)
+    print(balance)
+    if not balance:
+        return Http_errors(404)
+    message = {'account_id': account_id, 'balance': balance}
+    return message, 200
+
+
+@app.route('/ping')
+def Ping():
+    return 'pong', 200
 
 
 if __name__ == "__main__":
-    app.run()
+    socketio.run(app, debug=True)
