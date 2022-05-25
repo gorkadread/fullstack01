@@ -1,4 +1,5 @@
-import requests, datetime, uuid
+import datetime, uuid
+from helpers import *
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
 
@@ -20,41 +21,12 @@ def disconnected():
 @socketio.on('TransactionAdded')
 def transaction_added(message):
     print('Transaction added, return all finished ones')
-    response = jsonify(list(reversed(completed_transactions)))
+    response = list(reversed(completed_transactions))
     emit('transactionAddedResponse', {'data': response}, broadcast=True)
 
 
 # A dictionary containing all the accounts
 account_balances = {}
-
-
-# Finds a specific transaction
-def Find(transaction_list, transaction_id):
-    for transaction in transaction_list:
-        if transaction['transaction_id'] == transaction_id:
-            return transaction
-
-
-# Discerns wether passed value is an int
-def Could_be_int(value):
-    try:
-        int(value)
-        return True
-    except:
-        return False
-
-
-# Returns a message related to entered http error
-def Http_errors(code):
-    if code == 400:
-        return 'Missing parameters', 400
-    elif code == 404:
-        return 'Not found'
-    elif code == 405:
-        return 'Specified HTTP method not allowed', 405
-    elif code == 415:
-        return 'Specified content type not allowed', 415
-
 
 # A (crude) array-log containing all the transactions performed
 completed_transactions = []
@@ -71,7 +43,7 @@ def Transactions(transaction_id=None):
         account_id = data.get('account_id')
         amount = data.get('amount')
         # Make sure we got both account_id and amount, and that the account_id leads to an account
-        if not account_id or not Could_be_int(amount):
+        if not account_id or not validateInt(amount):
             return Http_errors(400)
 
         # Get current balance and calculate new one
@@ -87,7 +59,7 @@ def Transactions(transaction_id=None):
             'account_id': account_id,
             'amount': int(amount),
             'balance_after': balance_after,
-            'created_at': datetime.datetime.now()
+            'created_at': str(datetime.datetime.now())
         }
         completed_transactions.append(new_transaction)
 
@@ -124,7 +96,6 @@ def Accounts(account_id=None):
     if not account_id:
         return Http_errors(400)
     balance = account_balances.get(account_id)
-    print(balance)
     if not balance:
         return Http_errors(404)
     message = {'account_id': account_id, 'balance': balance}

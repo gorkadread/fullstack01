@@ -20,7 +20,7 @@ const TransactionHistory = () => {
     // Subscribe to the added transactions socket
     // This way we save a couple of rerenders and the code is much cleaner
     socket.on('transactionAddedResponse', (resp) => {
-      let updatedTransactions = resp.data.data;
+      let updatedTransactions = resp.data;
       messageHandler(updatedTransactions);
     })
 
