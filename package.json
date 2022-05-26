@@ -1,5 +1,5 @@
 {
-  "name": "nightswatch",
+  "name": "fullstack01",
   "version": "0.0.1",
   "scripts": {
     "build:backend": "cd app-flask && pip3 install -r requirements.txt",
